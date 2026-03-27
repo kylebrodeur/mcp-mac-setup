@@ -1,0 +1,36 @@
+{
+  "name": "@kylebrodeur/mcp-mac-setup",
+  "version": "1.0.0",
+  "description": "Fix VS Code MCP server stdio launches on macOS when Node/pnpm is managed via nvm or fnm",
+  "bin": {
+    "mcp-mac-setup": "./scripts/resolve-pnpm.js"
+  },
+  "files": [
+    "scripts/resolve-pnpm.js"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "mcp",
+    "macos",
+    "pnpm",
+    "nvm",
+    "fnm",
+    "vscode",
+    "model-context-protocol",
+    "claude"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kylebrodeur/mcp-mac-setup.git"
+  },
+  "bugs": {
+    "url": "https://github.com/kylebrodeur/mcp-mac-setup/issues"
+  },
+  "homepage": "https://github.com/kylebrodeur/mcp-mac-setup#readme",
+  "publishConfig": {
+    "access": "public"
+  }
+}

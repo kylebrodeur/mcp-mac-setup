@@ -1,0 +1,8 @@
+node_modules/
+*.log
+*.tgz
+.DS_Store
+
+# Agent / editor local state — never committed
+.agent/
+.state/

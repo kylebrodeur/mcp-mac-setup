@@ -1,0 +1,53 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Fix MCP pnpm path",
+      "type": "shell",
+      "command": "node",
+      "args": ["${workspaceFolder}/scripts/resolve-pnpm.js"],
+      "options": { "cwd": "${workspaceFolder}" },
+      "presentation": { "reveal": "always", "panel": "shared", "focus": true },
+      "problemMatcher": []
+    },
+    {
+      "label": "Fix MCP pnpm path (one server)",
+      "type": "shell",
+      "command": "node",
+      "args": [
+        "${workspaceFolder}/scripts/resolve-pnpm.js",
+        "--server",
+        "${input:serverName}"
+      ],
+      "options": { "cwd": "${workspaceFolder}" },
+      "presentation": { "reveal": "always", "panel": "shared", "focus": true },
+      "problemMatcher": []
+    },
+    {
+      "label": "Install Fix-MCP task into project",
+      "type": "shell",
+      "command": "node",
+      "args": [
+        "${workspaceFolder}/scripts/resolve-pnpm.js",
+        "--install-task",
+        "--task-dir",
+        "${input:projectVscodeDir}"
+      ],
+      "options": { "cwd": "${workspaceFolder}" },
+      "presentation": { "reveal": "always", "panel": "shared", "focus": true },
+      "problemMatcher": []
+    }
+  ],
+  "inputs": [
+    {
+      "id": "serverName",
+      "type": "promptString",
+      "description": "MCP server name to update (e.g. playwright, memory)"
+    },
+    {
+      "id": "projectVscodeDir",
+      "type": "promptString",
+      "description": "Absolute path to target project .vscode/ directory"
+    }
+  ]
+}
