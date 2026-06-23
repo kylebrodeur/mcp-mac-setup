@@ -1,6 +1,6 @@
 # mcp-mac-setup
 
-> Fix VS Code MCP server stdio launches on macOS when Node / pnpm is managed via **nvm** or **fnm**.
+> Fix stdio MCP server launches when Node is managed via **nvm** or **fnm** — works with VS Code, Cursor, Claude Code, Claude Desktop, and any host reading the standard `{"mcpServers": { ... }}` JSON config.
 
 [![npm](https://img.shields.io/npm/v/@kylebrodeur/mcp-mac-setup)](https://www.npmjs.com/package/@kylebrodeur/mcp-mac-setup)
 [![license](https://img.shields.io/github/license/kylebrodeur/mcp-mac-setup)](LICENSE)
@@ -9,119 +9,109 @@
 
 ## The Problem
 
-When you launch VS Code from a GUI (Dock, Spotlight, Finder), it starts as a process whose **environment is inherited from `launchd`** — not from your interactive shell. That means none of the PATH modifications that live in `~/.zshrc`, `~/.bash_profile`, or similar files are applied.
+GUI-launched applications (VS Code, Cursor, Claude Desktop, etc.) inherit their environment from `launchd`, not from your interactive shell. That means `~/.zshrc` / `~/.bash_profile` are never sourced, and any tool installed under a Node version manager (nvm, fnm) is missing from `PATH`.
 
-Tools like **nvm** and **fnm** work by injecting themselves into your shell session at login:
+When one of those apps tries to spawn an MCP server, it `exec()`s the command directly — and gets back `spawn pnpm ENOENT`, `command not found`, or — if you "fixed" it with an absolute path — silent breakage after you upgrade Node and the absolute path stops existing.
 
-```sh
-# typical ~/.zshrc entry for nvm
-export NVM_DIR="$HOME/.nvm"
-[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
-```
+### Why this is hard to solve in general
 
-This writes the active Node version's `bin/` directory (e.g. `~/.nvm/versions/node/v22.19.0/bin`) onto `PATH`. When VS Code opens a regular terminal it sources your rc file and everything works. But when VS Code spawns an **MCP server as a child stdio process** it does **not** source any shell config — the binary is just `exec()`'d directly.
+- macOS intentionally keeps GUI app environments minimal for reproducibility.
+- VS Code's [MCP server docs](https://code.visualstudio.com/docs/copilot/chat/mcp-servers) note the requirement but don't provide a fix for version-manager users.
+- The absolute path of `pnpm` / `node` / `npx` changes every time you switch Node versions (`~/.nvm/versions/node/v20.x.x/bin/pnpm` → `~/.nvm/versions/node/v22.x.x/bin/pnpm`).
+- One-time hardcoding goes stale. You need a script that re-resolves the real path each time you switch.
 
-The result: `pnpm` (and even `node`) are not found, and every stdio MCP server fails to start with a cryptic `spawn pnpm ENOENT` or `command not found` error.
+`mcp-mac-setup` does this:
 
-### Why this is a hard problem to solve in general
+1. Detects your Node version manager (fnm, nvm, or PNPM_HOME / `which` fallback).
+2. Resolves the **absolute** paths to the active `node`, `npx`, `pnpm`, `npm` binaries.
+3. Rewrites every `stdio` MCP server entry in the target config so that:
+   - `command` is the absolute path to the right binary for that server
+   - `env.PATH` is hardcoded with the active `bin/` first
+   - `env.PNPM_HOME` / `env.NVM_DIR` / `env.NVM_BIN` are set when relevant
 
-- macOS intentionally keeps GUI-launched application environments minimal for security and reproducibility reasons.
-- VS Code [does not source shell profiles](https://code.visualstudio.com/docs/terminal/profiles) when spawning non-terminal child processes (only the integrated *terminal* does this via a shell login trick).
-- npm-managed global tools (like `pnpm dlx`) rely on a `PATH`-resident binary, so there is no stable "default" location to hard-code.
-- The absolute path of the `pnpm` binary changes every time you switch Node versions with nvm/fnm (e.g. `~/.nvm/versions/node/v20.x.x/bin/pnpm` → `~/.nvm/versions/node/v22.x.x/bin/pnpm`).
+---
 
-This is a well-documented pain point across the community:
+## Hosts Supported
 
-- [microsoft/vscode#70248](https://github.com/microsoft/vscode/issues/70248) — "Terminal: shell integration should source shell profile"
-- Dozens of GitHub issues across MCP server repos where users report `spawn pnpm ENOENT` on macOS with nvm
-- The VS Code docs for [MCP servers](https://code.visualstudio.com/docs/copilot/chat/mcp-servers) note that you may need to ensure runtimes are on PATH, but don't provide a concrete fix for version-manager users
+Any host that reads `{"mcpServers": { ... }}` JSON. Includes:
 
-### The shim approach
+| Host | User-level config | Workspace / project config |
+|---|---|---|
+| VS Code | `~/Library/Application Support/Code/User/mcp.json` | `.vscode/mcp.json` |
+| Cursor | (via project root) | `./.mcp.json` |
+| Claude Code | `~/.claude.json` | `./.mcp.json` |
+| Claude Desktop | `~/Library/Application Support/Claude/claude_desktop_config.json` | (none — user-level only) |
 
-Because the path is version-specific and changes over time, a one-time hardcode is not enough. The right fix is a **script that reads your current nvm/fnm state, resolves the real absolute path, and writes it directly into `mcp.json`** — then you re-run it whenever you switch Node versions.
-
-`mcp-mac-setup` does exactly this:
-
-1. Detects your Node version manager (fnm, nvm, or `PNPM_HOME` fallback).
-2. Resolves the absolute path to the active `pnpm` binary and its `bin/` directory.
-3. Rewrites every `stdio` server entry in `~/.../Code/User/mcp.json` so that:
-   - `command` is the absolute path to `pnpm`
-   - `env.PATH` is a hardcoded string containing the active `bin/` directory first
+Pass `--target <path>` to target a specific file.
 
 ---
 
 ## Quick Start
 
 ```sh
-pnpm dlx @kylebrodeur/mcp-mac-setup
-```
+# rewrite every stdio server in the user-level mcp.json with absolute paths
+pnpm dlx @kylebrodeur/mcp-mac-setup --binary auto
 
-Then reload VS Code:
+# verify everything matches the current Node version (CI-friendly)
+pnpm dlx @kylebrodeur/mcp-mac-setup --check
 
+# then reload the host
+#   VS Code:        Cmd+Shift+P → Developer: Reload Window
+#   Claude Code:    restart MCP servers
+#   Cursor:         restart MCP servers
 ```
-Cmd+Shift+P → Developer: Reload Window
-```
-
-All stdio MCP servers in your user-level `mcp.json` are updated. HTTP/SSE servers are left untouched.
 
 ---
 
-## Installation & Usage
+## Why `--binary auto`?
 
-### One-shot (no install)
+Different MCP servers use different launchers:
 
-```sh
-# fix all stdio servers
-pnpm dlx @kylebrodeur/mcp-mac-setup
-
-# fix a single server
-pnpm dlx @kylebrodeur/mcp-mac-setup --server playwright
+```jsonc
+{
+  "mcpServers": {
+    "playwright":  { "command": "pnpm",   "args": ["dlx", "@playwright/mcp"] },
+    "codegraph":   { "command": "npx",    "args": ["-y", "@colbymchenry/codegraph", "serve", "--mcp"] },
+    "custom-shim": { "command": "node",   "args": ["./bin/my-mcp-server.js"] }
+  }
+}
 ```
 
-### Global install
-
-```sh
-pnpm add -g @kylebrodeur/mcp-mac-setup
-
-# then run any time you switch Node versions
-mcp-mac-setup
-```
-
-### From source
-
-```sh
-git clone https://github.com/kylebrodeur/mcp-mac-setup.git
-cd mcp-mac-setup
-node scripts/resolve-pnpm.js
-```
+`--binary auto` rewrites each server's `command` to the matching absolute path under the resolved Node bin directory, based on what the server actually uses. `--binary pnpm` (the v1.0 default) still works and forces every server through `pnpm`.
 
 ---
 
 ## CLI Options
 
 | Flag | Description |
-|------|-------------|
-| _(none)_ | Update all stdio servers in the user-level `mcp.json` |
+|---|---|
+| `--binary <mode>` | `auto` (per-server) \| `pnpm` (legacy default) \| `node` \| `npx` \| `npm` \| `all` |
 | `--server <name>` | Update a single named server only |
-| `--target <path>` | Write to a custom file instead of the default `mcp.json` |
-| `--workspace <path>` | Also read server definitions from a workspace `mcp.json` |
-| `--install-task` | Install a VS Code `tasks.json` entry into the current project |
-| `--task-dir <path>` | Combined with `--install-task`: target a specific `.vscode/` directory |
+| `--target <path>` | Write to `<path>` instead of the user-level mcp.json |
+| `--workspace <path>` | Read workspace `.vscode/mcp.json` from `<path>` |
+| `--prefer <v>` | Detection preference: `auto` \| `fnm` \| `nvm` |
+| `--check` | Exit 0 if config matches current runtime; 1 if rewrite is needed |
+| `--install-task` | Write a `.vscode/tasks.json` entry into the project |
+| `--task-dir <path>` | With `--install-task`: target `<path>/.vscode` |
 
----
-
-## VS Code Task
-
-Instead of running the CLI manually, you can install a VS Code task into any project:
+### Examples
 
 ```sh
-# adds a task to your current project's .vscode/tasks.json
-pnpm dlx @kylebrodeur/mcp-mac-setup --install-task
+# Fix everything in the user-level VS Code mcp.json
+pnpm dlx @kylebrodeur/mcp-mac-setup --binary auto
+
+# Fix a single server in a project-root .mcp.json
+pnpm dlx @kylebrodeur/mcp-mac-setup --binary auto --server codegraph --target ./.mcp.json
+
+# Force every server through pnpm (v1.0 behavior)
+pnpm dlx @kylebrodeur/mcp-mac-setup --binary pnpm
+
+# CI guard: fail the build if the config is stale
+pnpm dlx @kylebrodeur/mcp-mac-setup --binary auto --check
+
+# Use fnm even if both nvm and fnm are installed
+pnpm dlx @kylebrodeur/mcp-mac-setup --binary auto --prefer fnm
 ```
-
-Then run it with `Cmd+Shift+P → Tasks: Run Task → Fix MCP pnpm path`.
-
-The task will also be offered for projects that clone this repo directly (see `.vscode/tasks.json`).
 
 ---
 
@@ -129,53 +119,65 @@ The task will also be offered for projects that clone this repo directly (see `.
 
 Re-run `mcp-mac-setup` after:
 
-- Upgrading your Node version with `nvm use` / `fnm use`
-- Reinstalling pnpm (e.g. via `corepack enable pnpm`)
-- Any change that moves the `pnpm` binary to a new absolute path
+- Upgrading your Node version (`nvm use` / `fnm use`)
+- Switching Node version managers
+- Adding or removing MCP servers that depend on `node`/`npx`/`pnpm`/`npm`
+- Any change that moves the Node-managed binaries to new absolute paths
 
 ---
 
-## How It Works
+## What Gets Preserved
 
-```
-~/.nvm/versions/node/v22.19.0/bin/
-├── node       ← resolved by reading ~/.nvm/alias/default
-└── pnpm       ← written into mcp.json as the absolute command
+The script only rewrites fields that need to change:
 
-       ┌─────────────────────────────────────┐
-       │  ~/.../Code/User/mcp.json (before)  │
-       │  "command": "pnpm"                  │  ← not found in GUI PATH
-       └─────────────────────────────────────┘
-                         │ mcp-mac-setup
-                         ▼
-       ┌──────────────────────────────────────────────────────────┐
-       │  ~/.../Code/User/mcp.json (after)                        │
-       │  "command": "/Users/you/.nvm/versions/node/v22.19.0/     │
-       │              bin/pnpm"                                    │
-       │  "env": { "PATH": "/Users/you/.nvm/…/bin:~/Library/pnpm:│
-       │            /usr/local/bin:/usr/bin:/bin" }                │
-       └──────────────────────────────────────────────────────────┘
+- ✅ **Absolute paths you wrote yourself** (e.g. `/opt/custom/binary`) → command preserved; only `env.PATH` is injected so the server can find its own helpers
+- ✅ **HTTP / SSE servers** (`type: "http"` or `type: "sse"`) → skipped entirely
+- ✅ **`args` arrays** → unchanged (the gallery "exec" → "dlx" typo fix still applies under `--binary pnpm`)
+- ✅ **User-defined env vars** → preserved, only `PATH` / `PNPM_HOME` / `NVM_*` are merged in
+
+---
+
+## VS Code Task
+
+Install a one-keystroke task into any project:
+
+```sh
+pnpm dlx @kylebrodeur/mcp-mac-setup --install-task
 ```
 
-Detection priority:
-1. **fnm** — checks `~/.local/share/fnm/aliases/default/bin/`
-2. **nvm** — reads `~/.nvm/alias/default` to get the active version
-3. **PNPM_HOME** / `which pnpm` — last-resort fallback (warns if used)
+Then: `Cmd+Shift+P → Tasks: Run Task → Fix MCP runtime path`.
+
+The repo's own `.vscode/tasks.json` exposes the same tasks for contributors.
+
+---
+
+## Detection Priority
+
+1. **fnm** — `~/.local/share/fnm/aliases/default/bin/`
+2. **nvm** — reads `~/.nvm/alias/default` (the active version)
+3. **PNPM_HOME / `which pnpm`** — last-resort fallback (warns; path may be unstable)
+
+Override priority with `--prefer fnm` or `--prefer nvm`.
 
 ---
 
 ## Requirements
 
-- macOS (Linux is supported but the PATH problem is less common there)
+- macOS or Linux
 - Node ≥ 18
-- nvm or fnm managing your Node installation (fallback works for other setups)
-- VS Code with MCP server support ([GitHub Copilot](https://marketplace.visualstudio.com/items?itemName=GitHub.copilot) or [Copilot Chat](https://marketplace.visualstudio.com/items?itemName=GitHub.copilot-chat))
+- nvm or fnm managing your Node install (PNPM_HOME fallback also works)
 
 ---
 
 ## Contributing
 
 Issues and PRs welcome at [github.com/kylebrodeur/mcp-mac-setup](https://github.com/kylebrodeur/mcp-mac-setup).
+
+Run the test suite locally:
+
+```sh
+pnpm test
+```
 
 ---
 

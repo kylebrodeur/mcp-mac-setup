@@ -1,36 +1,48 @@
 {
-  "name": "@kylebrodeur/mcp-mac-setup",
-  "version": "1.0.0",
-  "description": "Fix VS Code MCP server stdio launches on macOS when Node/pnpm is managed via nvm or fnm",
-  "bin": {
-    "mcp-mac-setup": "./scripts/resolve-pnpm.js"
-  },
-  "files": [
-    "scripts/resolve-pnpm.js"
-  ],
-  "engines": {
-    "node": ">=18"
-  },
-  "keywords": [
-    "mcp",
-    "macos",
-    "pnpm",
-    "nvm",
-    "fnm",
-    "vscode",
-    "model-context-protocol",
-    "claude"
-  ],
-  "license": "MIT",
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/kylebrodeur/mcp-mac-setup.git"
-  },
-  "bugs": {
-    "url": "https://github.com/kylebrodeur/mcp-mac-setup/issues"
-  },
-  "homepage": "https://github.com/kylebrodeur/mcp-mac-setup#readme",
-  "publishConfig": {
-    "access": "public"
-  }
+	"name": "@kylebrodeur/mcp-mac-setup",
+	"version": "1.1.0",
+	"description": "Fix stdio MCP server launches when Node/pnpm is managed via nvm or fnm — works with VS Code, Cursor, Claude Code, Claude Desktop, and any host reading the standard { \"mcpServers\": { ... } } JSON config.",
+	"bin": {
+		"mcp-mac-setup": "./bin/mcp-mac-setup.js"
+	},
+	"files": [
+		"bin",
+		"lib",
+		"scripts",
+		"README.md",
+		"LICENSE"
+	],
+	"scripts": {
+		"test": "node --test test/test-fix-mcp.mjs",
+		"mcp:check": "node bin/mcp-mac-setup.js --binary auto --check",
+		"mcp:fix": "node bin/mcp-mac-setup.js --binary auto"
+	},
+	"engines": {
+		"node": ">=18"
+	},
+	"keywords": [
+		"mcp",
+		"macos",
+		"linux",
+		"pnpm",
+		"nvm",
+		"fnm",
+		"vscode",
+		"cursor",
+		"claude-code",
+		"claude-desktop",
+		"model-context-protocol"
+	],
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/kylebrodeur/mcp-mac-setup.git"
+	},
+	"bugs": {
+		"url": "https://github.com/kylebrodeur/mcp-mac-setup/issues"
+	},
+	"homepage": "https://github.com/kylebrodeur/mcp-mac-setup#readme",
+	"publishConfig": {
+		"access": "public"
+	}
 }
